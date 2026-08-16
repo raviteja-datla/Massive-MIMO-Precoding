@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Model weights / checkpoints
+*.pt
+*.pth
+*.h5
+*.ckpt
+*.pkl
+
+# Simulation / numeric data dumps
+*.npy
+*.npz
+*.mat
+
+# Generated outputs
+results/
+outputs/
+figures/
