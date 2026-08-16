@@ -4,6 +4,7 @@ save each model's plots to its own subfolder of results/.
 """
 
 from pathlib import Path
+from typing import Callable
 
 import matplotlib
 
@@ -34,6 +35,80 @@ LARGE_M = 256
 LARGE_K_VALUES = [8, 32, 64, 96, 128, 160, 192, 224, 250]
 LARGE_N_TRIALS = 100
 
+# Fixed categorical colors, one per precoder, held constant across every plot
+# (never matplotlib's auto-cycled defaults).
+PRECODER_COLORS = {
+    "MRT": "#2a78d6",   # blue
+    "ZF": "#eb6834",    # orange
+    "RZF": "#1baf7a",   # aqua
+    "MMSE": "#eda100",  # yellow
+}
+CHART_SURFACE = "#fcfcfb"
+PRIMARY_INK = "#0b0b0b"
+SECONDARY_INK = "#52514e"
+MUTED_INK = "#898781"
+GRIDLINE = "#e1e0d9"
+BASELINE = "#c3c2b7"
+
+
+def _apply_style() -> None:
+    plt.rcParams.update(
+        {
+            "figure.facecolor": CHART_SURFACE,
+            "axes.facecolor": CHART_SURFACE,
+            "savefig.facecolor": CHART_SURFACE,
+            "font.family": "sans-serif",
+            "font.sans-serif": ["DejaVu Sans", "Segoe UI", "Arial"],
+            "text.color": PRIMARY_INK,
+            "axes.labelcolor": SECONDARY_INK,
+            "axes.edgecolor": BASELINE,
+            "axes.titlecolor": PRIMARY_INK,
+            "axes.titlesize": 12,
+            "axes.titleweight": "bold",
+            "axes.labelsize": 10,
+            "xtick.color": MUTED_INK,
+            "ytick.color": MUTED_INK,
+            "grid.color": GRIDLINE,
+            "grid.linewidth": 0.8,
+            "legend.frameon": False,
+            "legend.labelcolor": SECONDARY_INK,
+            "lines.linewidth": 2.0,
+            "lines.markersize": 6,
+            "lines.markeredgewidth": 0,
+        }
+    )
+
+
+def _plot_lines(
+    results_dir: Path,
+    filename: str,
+    series: dict[str, np.ndarray],
+    x,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+    xscale: str | None = None,
+    yscale: str | None = None,
+    extra: Callable[[], None] | None = None,
+) -> None:
+    plt.figure(figsize=(7, 4.5))
+    for name, y in series.items():
+        plt.plot(x, y, marker="o", label=name, color=PRECODER_COLORS.get(name, MUTED_INK))
+    if extra is not None:
+        extra()
+    if xscale is not None:
+        plt.xscale(xscale)
+    if yscale is not None:
+        plt.yscale(yscale)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, which="both" if yscale == "log" else "major")
+    plt.tight_layout()
+    plt.savefig(results_dir / filename, dpi=150, bbox_inches="tight")
+    plt.close()
+
 
 def _kronecker_channel(M: int, K: int, rng: np.random.Generator) -> np.ndarray:
     """Matches the ChannelFn signature; fixes rho=KRONECKER_RHO for this run."""
@@ -51,16 +126,15 @@ def plot_sum_rate_vs_snr(results_dir: Path, channel_fn: ChannelFn, model_label: 
         SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, rates in results.items():
-        plt.plot(snr_values, rates, marker="o", label=name)
-    plt.xlabel("SNR (dB)")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(f"Sum rate vs SNR (M=64, K=8) — {model_label}")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "sum_rate_vs_snr.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    _plot_lines(
+        results_dir,
+        "sum_rate_vs_snr.png",
+        results,
+        snr_values,
+        "SNR (dB)",
+        "Sum rate (bits/s/Hz)",
+        f"Sum rate vs SNR (M=64, K=8) — {model_label}",
+    )
 
 
 def plot_sum_rate_vs_M(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -74,17 +148,16 @@ def plot_sum_rate_vs_M(results_dir: Path, channel_fn: ChannelFn, model_label: st
         SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, rates in results.items():
-        plt.plot(M_values, rates, marker="o", label=name)
-    plt.xlabel("Number of BS antennas M")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(f"Sum rate vs M (K=8, SNR=10 dB) — {model_label}")
-    plt.xscale("log", base=2)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "sum_rate_vs_M.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    _plot_lines(
+        results_dir,
+        "sum_rate_vs_M.png",
+        results,
+        M_values,
+        "Number of BS antennas M",
+        "Sum rate (bits/s/Hz)",
+        f"Sum rate vs M (K=8, SNR=10 dB) — {model_label}",
+        xscale="log",
+    )
 
 
 def plot_sum_rate_vs_K(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -99,16 +172,15 @@ def plot_sum_rate_vs_K(results_dir: Path, channel_fn: ChannelFn, model_label: st
         SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, rates in results.items():
-        plt.plot(K_values, rates, marker="o", label=name)
-    plt.xlabel("Number of users K")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(f"Sum rate vs K (M={M}, SNR=10 dB) — {model_label}")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "sum_rate_vs_K.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    _plot_lines(
+        results_dir,
+        "sum_rate_vs_K.png",
+        results,
+        K_values,
+        "Number of users K",
+        "Sum rate (bits/s/Hz)",
+        f"Sum rate vs K (M={M}, SNR=10 dB) — {model_label}",
+    )
 
 
 def plot_rzf_vs_xi(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -126,17 +198,26 @@ def plot_rzf_vs_xi(results_dir: Path, channel_fn: ChannelFn, model_label: str) -
     sigma2 = 1.0 / (10 ** (snr_db / 10))
     xi_mmse = K * sigma2 / 1.0
 
-    plt.figure()
-    plt.plot(xi_values, results["RZF"], marker="o", label="RZF")
-    plt.axvline(xi_mmse, color="red", linestyle="--", label=f"MMSE-optimal ξ={xi_mmse:.3g}")
-    plt.xscale("log")
-    plt.xlabel("Regularization ξ")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(f"RZF sum rate vs ξ (M={M}, K={K}, SNR={snr_db:.0f} dB) — {model_label}")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "rzf_vs_xi.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    def mark_mmse() -> None:
+        plt.axvline(
+            xi_mmse,
+            color=PRECODER_COLORS["MMSE"],
+            linestyle="--",
+            linewidth=1.5,
+            label=f"MMSE-optimal ξ={xi_mmse:.3g}",
+        )
+
+    _plot_lines(
+        results_dir,
+        "rzf_vs_xi.png",
+        results,
+        xi_values,
+        "Regularization ξ",
+        "Sum rate (bits/s/Hz)",
+        f"RZF sum rate vs ξ (M={M}, K={K}, SNR={snr_db:.0f} dB) — {model_label}",
+        xscale="log",
+        extra=mark_mmse,
+    )
 
 
 def plot_ber_vs_snr(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -152,16 +233,17 @@ def plot_ber_vs_snr(results_dir: Path, channel_fn: ChannelFn, model_label: str) 
         seed=SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, ber in results.items():
-        plt.semilogy(snr_values, np.clip(ber, 1e-6, None), marker="o", label=name)
-    plt.xlabel("SNR (dB)")
-    plt.ylabel("BER")
-    plt.title(f"BER vs SNR, QPSK (M={M}, K={K}) — {model_label}")
-    plt.legend()
-    plt.grid(True, which="both", alpha=0.3)
-    plt.savefig(results_dir / "ber_vs_snr.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    results = {name: np.clip(ber, 1e-6, None) for name, ber in results.items()}
+    _plot_lines(
+        results_dir,
+        "ber_vs_snr.png",
+        results,
+        snr_values,
+        "SNR (dB)",
+        "BER",
+        f"BER vs SNR, QPSK (M={M}, K={K}) — {model_label}",
+        yscale="log",
+    )
 
 
 def plot_mrt_zf_crossover(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -178,18 +260,15 @@ def plot_mrt_zf_crossover(results_dir: Path, channel_fn: ChannelFn, model_label:
         SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, rates in results.items():
-        plt.plot(CROSSOVER_SNR_VALUES, rates, marker="o", label=name)
-    plt.xlabel("SNR (dB)")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(
-        f"MRT vs ZF crossover (M={CROSSOVER_M}, K={CROSSOVER_K}) — {model_label}"
+    _plot_lines(
+        results_dir,
+        "mrt_zf_crossover.png",
+        results,
+        CROSSOVER_SNR_VALUES,
+        "SNR (dB)",
+        "Sum rate (bits/s/Hz)",
+        f"MRT vs ZF crossover (M={CROSSOVER_M}, K={CROSSOVER_K}) — {model_label}",
     )
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "mrt_zf_crossover.png", dpi=150, bbox_inches="tight")
-    plt.close()
 
 
 def plot_ber_vs_snr_16qam(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -206,16 +285,17 @@ def plot_ber_vs_snr_16qam(results_dir: Path, channel_fn: ChannelFn, model_label:
         channel_fn=channel_fn,
         modulation=QAM16,
     )
-    plt.figure()
-    for name, ber in results.items():
-        plt.semilogy(snr_values, np.clip(ber, 1e-6, None), marker="o", label=name)
-    plt.xlabel("SNR (dB)")
-    plt.ylabel("BER")
-    plt.title(f"BER vs SNR, 16-QAM (M={M}, K={K}) — {model_label}")
-    plt.legend()
-    plt.grid(True, which="both", alpha=0.3)
-    plt.savefig(results_dir / "ber_vs_snr_16qam.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    results = {name: np.clip(ber, 1e-6, None) for name, ber in results.items()}
+    _plot_lines(
+        results_dir,
+        "ber_vs_snr_16qam.png",
+        results,
+        snr_values,
+        "SNR (dB)",
+        "BER",
+        f"BER vs SNR, 16-QAM (M={M}, K={K}) — {model_label}",
+        yscale="log",
+    )
 
 
 def plot_sum_rate_vs_K_large(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -230,16 +310,15 @@ def plot_sum_rate_vs_K_large(results_dir: Path, channel_fn: ChannelFn, model_lab
         SEED,
         channel_fn=channel_fn,
     )
-    plt.figure()
-    for name, rates in results.items():
-        plt.plot(LARGE_K_VALUES, rates, marker="o", label=name)
-    plt.xlabel("Number of users K")
-    plt.ylabel("Sum rate (bits/s/Hz)")
-    plt.title(f"Sum rate vs K, large scale (M={LARGE_M}, SNR=10 dB) — {model_label}")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(results_dir / "sum_rate_vs_K_large.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    _plot_lines(
+        results_dir,
+        "sum_rate_vs_K_large.png",
+        results,
+        LARGE_K_VALUES,
+        "Number of users K",
+        "Sum rate (bits/s/Hz)",
+        f"Sum rate vs K, large scale (M={LARGE_M}, SNR=10 dB) — {model_label}",
+    )
 
 
 def run_all_plots(results_dir: Path, channel_fn: ChannelFn, model_label: str) -> None:
@@ -256,6 +335,7 @@ def run_all_plots(results_dir: Path, channel_fn: ChannelFn, model_label: str) ->
 
 
 def main() -> None:
+    _apply_style()
     run_all_plots(RESULTS_DIR / "iid", generate_channel, "i.i.d. Rayleigh")
     run_all_plots(
         RESULTS_DIR / "correlated",
